@@ -18,12 +18,29 @@ structure CMSources :
         (CM.sources NONE f)
 
     fun isCM f = if String.isSuffix ".cm" f then SOME f else NONE
+    fun isSML f =
+      let fun check ft = String.isSuffix ft f in
+        if check ".sml" orelse check ".fun" orelse check ".sig" then
+          SOME f
+        else
+          NONE
+      end
 
-    fun printSources sources =
+    fun getCMSources sources =
       sources
       |> List.mapPartial isCM
       |> List.mapPartial getSources
       |> List.concat
+    val getSMLSources = List.mapPartial isSML
+
+    fun removeDups (L : string list) =
+      case L of
+        [] => []
+      | x :: xs => x :: removeDups (List.filter (not o Fn.curry op= x) xs)
+
+    fun printSources sources =
+      (getCMSources sources @ getSMLSources sources)
+      |> removeDups
       |> String.concatWith " "
       |> print
 
