@@ -13,6 +13,8 @@ val optionalArgDesc =
 \  [--preview]            show formatted before writing to file\n\
 \  [--preview-only]       show formatted output and skip file overwrite\n\
 \                         (incompatible with --force)\n\
+\  [--parse-only]         shows parsing error messages but does not format\n\
+\                         in anyway (incompatible with all above flags)\n\
 \  [-max-width W]         try to use at most <W> columns in each line\n\
 \                         (default 80)\n\
 \  [-ribbon-frac R]       controls how dense each line should be\n\
@@ -41,7 +43,10 @@ val doForce = CommandLineArgs.parseFlag "force"
 val doHelp = CommandLineArgs.parseFlag "help"
 val preview = CommandLineArgs.parseFlag "preview"
 val previewOnly = CommandLineArgs.parseFlag "preview-only"
-val showPreview = preview orelse previewOnly
+val parseOnly = CommandLineArgs.parseFlag "parse-only"
+val showPreview = (preview orelse previewOnly) andalso (not parseOnly)
+
+val _ = CommandLineArgs.parseSingleFlag "m" (* disregard smlnj cm flag *)
 
 val _ =
   if doHelp orelse List.null inputfiles then
@@ -125,7 +130,7 @@ fun doSMLAst (fp, ast) =
       ; print "\n"
       );
 
-    if previewOnly then ()
+    if previewOnly orelse parseOnly then ()
     else if doForce then
       writeOut ()
     else

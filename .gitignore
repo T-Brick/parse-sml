@@ -2,3 +2,5 @@ smlfmt
 demo
 demo.dbg
 .DS_Store
+.cm
+cm-sources.*

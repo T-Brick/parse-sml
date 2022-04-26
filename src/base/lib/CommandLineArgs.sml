@@ -22,6 +22,8 @@ sig
 
   (* parseFlag K returns true if --K given on command-line *)
   val parseFlag: string -> bool
+  (* parseSingleFlag K returns true if -K given on command-line *)
+  val parseSingleFlag: string -> bool
 
   val positional: unit -> string list
 end =
@@ -103,6 +105,11 @@ struct
 
   fun parseFlag key =
     case search ("--" ^ key) (CommandLine.arguments ()) of
+      NONE => false
+    | SOME _ => true
+
+  fun parseSingleFlag key =
+    case search ("-" ^ key) (CommandLine.arguments ()) of
       NONE => false
     | SOME _ => true
 
