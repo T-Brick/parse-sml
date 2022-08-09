@@ -24,6 +24,8 @@ sig
   val getSource: token -> Source.t
   val getClass: token -> class
 
+  val toString : token -> string
+
   val isComment: token -> bool
   val isWhitespace: token -> bool
   val isCommentOrWhitespace: token -> bool
@@ -85,6 +87,13 @@ struct
 
   fun getSource ({idx, context}: token) =
     WithSource.srcOf (Seq.nth context idx)
+
+  fun toString tok =
+    let
+      val src = getSource tok
+    in
+      CharVector.tabulate (Source.length src, Source.nth src)
+    end
 
   fun isComment tok =
     case getClass tok of
@@ -194,5 +203,4 @@ struct
     val makePathFromSource = makePathFromSource
     (* val makePathFromSourceString = makePathFromSourceString *)
   end
-
 end
