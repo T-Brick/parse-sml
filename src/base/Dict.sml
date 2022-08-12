@@ -27,6 +27,7 @@ sig
   val fromList: (Key.t * 'a) list -> 'a dict
 
   val unionWith: ('a * 'a -> 'a) -> ('a dict * 'a dict) -> 'a dict
+  val listItems  : 'a dict -> 'a list
 
 (** below are other ORD_MAP functions that we could easily add if needed. *)
 (*
@@ -118,5 +119,7 @@ struct
 
   fun fromList kvs =
     List.foldl (fn ((k, v), d) => insert d (k, v)) empty kvs
+
+  val listItems = M.listItems
 
 end
