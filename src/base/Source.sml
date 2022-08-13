@@ -33,6 +33,7 @@ sig
   val abut: source * source -> source option
 
   val toString: source -> string
+  val toRegionString : source -> string
 
   val wholeFile: source -> source
 
@@ -201,4 +202,9 @@ struct
       Seq.tabulate (fn i => (start i - off, endd i - off)) numLines
     end
 
+  fun posString {line, col} = (Int.toString line) ^ "." ^ (Int.toString col)
+  fun toRegionString src =
+    (FilePath.toUnixPath o fileName) src
+    ^ " : " ^ (posString o absoluteStart) src
+    ^ "-" ^ (posString o absoluteEnd) src
 end
