@@ -1,0 +1,20 @@
+local
+  $(SML_LIB)/basis/basis.mlb
+  local
+    $(SML_LIB)/basis/build/sources.mlb
+    nj-array.sml
+  in
+    structure ArrayExtra = Array
+    structure Word8ArrayExtra = Word8Array
+  end
+
+  PosixReadFile.sml
+  nj.sml
+  nj-word16.sml
+in
+  structure ForkJoin
+  structure Concurrency
+  structure ReadFile
+  structure GCStats
+  structure Word16
+end
