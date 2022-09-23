@@ -834,7 +834,12 @@ struct
 
             else if isReserved Token.Underscore i then
               consume_expAfterUnderscore infdict restriction (tok i) (i+1)
-
+            else if Token.isReserved (tok i) then
+              ParserUtils.tokError toks
+                { pos = i
+                , what = "Unexpected token."
+                , explain = SOME "Reserved keyword used. Try changing variable names."
+                }
             else
               ParserUtils.tokError toks
                 { pos = i

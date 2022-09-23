@@ -105,6 +105,12 @@ struct
               consume_patListLiteral infdict (tok i) (i+1)
             else if isReserved Token.OpenCurlyBracket i then
               consume_patRecord infdict (tok i) (i+1)
+            else if Token.isReserved (tok i) then
+              ParserUtils.tokError toks
+                { pos = i
+                , what = "Unexpected token."
+                , explain = SOME "Reserved keyword used. Try changing variable names."
+                }
             else
               ParserUtils.tokError toks
                 { pos = i
