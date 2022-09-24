@@ -20,13 +20,11 @@ structure Concurrency =
 struct
   val numberOfProcessors = 1
 
-  fun eq (a: 'a, b: 'a) = (Unsafe.cast a: word) = Unsafe.cast b
-
   fun cas r (x, y) =
     let
       val current = !r
     in
-      if eq (x, current) then r := y else ();
+      if MLton.eq (x, current) then r := y else ();
       current
     end
 
@@ -34,7 +32,7 @@ struct
     let
       val current = Array.sub (a, i)
     in
-      if eq (x, current) then Array.update (a, i, y) else ();
+      if MLton.eq (x, current) then Array.update (a, i, y) else ();
       current
     end
 end

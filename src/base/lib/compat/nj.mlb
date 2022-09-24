@@ -1,5 +1,7 @@
 local
   $(SML_LIB)/basis/basis.mlb
+
+  nj-mlton.sml
   local
     $(SML_LIB)/basis/build/sources.mlb
     nj-array.sml
@@ -17,4 +19,5 @@ in
   structure ReadFile
   structure GCStats
   structure Word16
+  structure MLton
 end
