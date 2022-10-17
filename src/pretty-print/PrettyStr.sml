@@ -95,7 +95,7 @@ struct
               [ SOME (token starter)
               , SOME (token strid)
               , Option.map
-                  (fn {colon, ...} => token colon)
+                  (fn {colon, sigexp} => token colon)
                   constraint
               ]
             \\ separateWithSpaces

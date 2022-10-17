@@ -85,6 +85,9 @@ struct
     type chain = unit
     type any = unit
 
+    (* TODO fix *)
+    val useWindowsProcess = false (* MLton.Platform.OS.useWindowsProcess *)
+
     val readWrite =
       let
           open FileSys.S
@@ -104,7 +107,7 @@ struct
         * ('a, 'b) t -> ('c, 'd) t
         *)
       fun remember x =
-          case !x of 
+          case !x of
             FileDesc f =>
                 (x := Stream ((), fn () => ())
                 ; ref (FileDesc f))
@@ -124,35 +127,47 @@ struct
             | Stream (str, _) => str
             | Term => raise MisuseOfForget
 
-          val buf_size = 4096
+        val buf_size = 4096
 
-          fun binio_newIn (fd, name) =
-            let
-                val reader = Posix.IO.mkBinReader {fd = fd, initBlkMode = true, name = name}
-            in
-                BinIO.StreamIO.mkInstream (reader, IO.readVec (fd, buf_size))
-            end
-          fun textio_newIn mk mkSIO vec (fd, name) =
-            let
-                val reader = Posix.IO.mkTextReader {fd = fd, initBlkMode = true, name = name}
-            in
-                TextIO.StreamIO.mkInstream (reader, "")
-            end
-          fun newOut mk mkSIO (fd, name) =
-            let
-                val writer = mk {appendMode = false, chunkSize = 4096, fd = fd, initBlkMode = true, name = name}
-                val buffer_mode =
-                  if Posix.ProcEnv.isatty fd
-                  then OldIO.LINE_BUF
-                  else OldIO.BLOCK_BUF
-            in
-                mkSIO (writer, buffer_mode)
-            end
+        fun binio_newIn (fd, name) =
+          let
+            val reader = Posix.IO.mkBinReader {fd = fd, initBlkMode = true, name = name}
+          in
+            BinIO.mkInstream (BinIO.StreamIO.mkInstream (reader, IO.readVec (fd, buf_size)))
+          end
+        fun textio_newIn (fd, name) =
+          let
+            val reader = Posix.IO.mkTextReader {fd = fd, initBlkMode = true, name = name}
+          in
+            TextIO.mkInstream (TextIO.StreamIO.mkInstream (reader, ""))
+          end
+        fun newOut mk mkSIO (fd, name) =
+          let
+            val writer = mk {appendMode = false, chunkSize = buf_size, fd = fd, initBlkMode = true, name = name}
+            val buffer_mode =
+              if Posix.ProcEnv.isatty fd
+              then OldIO.LINE_BUF
+              else OldIO.BLOCK_BUF
+          in
+              mkSIO (writer, buffer_mode)
+          end
       in
-          val binIn = convert (binio_newIn, Unsafe.cast BinIO.closeIn)
-          val binOut = convert (newOut Posix.IO.mkBinWriter BinIO.StreamIO.mkOutstream, Unsafe.cast BinIO.closeOut)
-          val textIn = convert (textio_newIn, Unsafe.cast TextIO.closeIn)
-          val textOut = convert (newOut Posix.IO.mkTextWriter TextIO.StreamIO.mkOutstream, Unsafe.cast TextIO.closeOut)
+        val binIn : (BinIO.instream, input) t -> BinIO.instream =
+          (convert (binio_newIn, BinIO.StreamIO.closeIn o BinIO.getInstream))
+        val binOut : (BinIO.outstream, input) t -> BinIO.outstream =
+          convert
+            ( newOut Posix.IO.mkBinWriter
+                (BinIO.mkOutstream o BinIO.StreamIO.mkOutstream)
+            , BinIO.closeOut
+            )
+        val textIn : (TextIO.instream, input) t -> TextIO.instream =
+          convert (textio_newIn, TextIO.StreamIO.closeIn o TextIO.getInstream)
+        val textOut : (TextIO.outstream, input) t -> TextIO.outstream =
+          convert
+            ( newOut Posix.IO.mkTextWriter
+                (TextIO.mkOutstream o TextIO.StreamIO.mkOutstream)
+            , TextIO.StreamIO.closeOut o TextIO.getOutstream
+            )
       end
 
       fun fd p =
@@ -170,5 +185,243 @@ struct
           fn (stdin, stdout, stderr) =>
           (close stdin; close stdout; close stderr)
     end
+
+    structure Param =
+    struct
+      datatype ('use, 'dir) t =
+          File of string
+        | FileDesc of FileSys.file_desc
+        | Pipe
+        | Self
+
+      (* This is _not_ the identity; by rebuilding it we get type
+        * ('a, 'b) t -> ('c, 'd) t
+        *)
+      val forget = fn
+          File x => File x
+        | FileDesc f => FileDesc f
+        | Pipe => Pipe
+        | Self => Self
+
+      val pipe = Pipe
+      local
+          val null = if useWindowsProcess then "nul" else "/dev/null"
+      in
+          val null = File null
+      end
+      val self = Self
+      fun file f = File f
+      fun fd f = FileDesc f
+
+      fun child c =
+          FileDesc
+          (case !c of 
+              Child.FileDesc f => (c := Child.Stream ((), fn () => ()); f)
+            | Child.Stream _ => raise DoublyRedirected
+            | Child.Term  => raise MisuseOfForget)
+
+      fun setCloseExec fd =
+          if useWindowsProcess
+            then ()
+          else IO.setfd (fd, IO.FD.flags [IO.FD.cloexec])
+
+      local
+          fun openOut std p =
+            case p of 
+                File s => (FileSys.creat (s, readWrite), Child.Term)
+              | FileDesc f => (f, Child.Term)
+              | Pipe =>
+                  let
+                      val {infd, outfd} = IO.pipe ()
+                      val () = setCloseExec infd
+                  in
+                      (outfd, Child.FileDesc infd)
+                  end
+              | Self => (std, Child.Term)
+      in
+          fun openStdout p = openOut FileSys.stdout p
+          fun openStderr p = openOut FileSys.stderr p
+      end
+
+      fun openStdin p =
+          case p of
+            File s =>
+                (FileSys.openf (s, FileSys.O_RDONLY, FileSys.O.flags []),
+                Child.Term)
+          | FileDesc f => (f, Child.Term)
+          | Pipe =>
+                let
+                  val {infd, outfd} = IO.pipe ()
+                  val () = setCloseExec outfd
+                in
+                  (infd, Child.FileDesc outfd)
+                end
+          | Self => (FileSys.stdin, Child.Term)
+
+      fun close p fd =
+          case p of
+            File _ => IO.close fd
+          | FileDesc _ => IO.close fd
+          | Pipe => IO.close fd
+          | _ => ()
+    end
+
+    datatype ('stdin, 'stdout, 'stderr) t =
+        T of {pid: Process.pid, (* if useWindowsProcess,
+                                 * then this is a Windows process handle
+                                 * and can't be passed to
+                                 * Posix.Process.* functions.
+                                 *)
+              status: Posix.Process.exit_status option ref,
+              stderr: ('stderr, input) Child.t,
+              stdin:  ('stdin, output) Child.t,
+              stdout: ('stdout, input) Child.t}
+
+    local
+      fun make f (T r) = f r
+    in
+      val getStderr = fn z => make #stderr z
+      val getStdin = fn z => make #stdin z
+      val getStdout = fn z => make #stdout z
+    end
+
+    (* TODO: implement *)
+    fun ('a, 'b) protect (f: 'a -> 'b, x: 'a): 'b = f x
+      (* let
+        val () = Mask.block Mask.all
+      in
+        DynamicWind.wind (fn () => f x, fn () => Mask.unblock Mask.all)
+      end *)
+
+    local
+      fun reap reapFn (T {pid, status, stderr, stdin, stdout, ...}) =
+        case !status of
+            NONE =>
+              let
+                  val _ = Child.close (!stdin, !stdout, !stderr)
+                  val st = reapFn pid
+              in
+                  status := SOME st
+                  ; st
+              end
+          | SOME st => st
+    in
+      fun reapForFork p =
+        reap (fn pid =>
+              let
+                  (* protect is probably too much; typically, one
+                  * would only mask SIGINT, SIGQUIT and SIGHUP.
+                  *)
+                  val (_, st) =
+                    protect (Process.waitpid, (Process.W_CHILD pid, []))
+              in
+                  st
+              end)
+              p
+      fun reapForCreate p = raise Fail "TODO Windows!"
+        (* reap (fn pid =>
+              let
+                  val pid' = PId.toRep pid
+                  val status' = ref (C_Status.fromInt 0)
+                  val () =
+                    SysCall.simple
+                    (fn () =>
+                      PrimitiveFFI.Windows.Process.getexitcode
+                      (pid', status'))
+              in
+                  Process.fromStatus' (!status')
+              end)
+              p *)
+      end
+      val reap = fn p =>
+          (if useWindowsProcess then reapForCreate else reapForFork) p
+
+      local
+        fun kill killFn (p as T {pid, status, ...}, signal) =
+          case !status of
+              NONE =>
+                let
+                    val () = killFn (pid, signal)
+                in
+                    ignore (reap p)
+                end
+            | SOME _ => ()
+      in
+        fun killForFork p =
+          kill (fn (pid, signal) =>
+                Process.kill (Process.K_PROC pid, signal))
+                p
+        fun killForCreate p = raise Fail "TODO Windows!"
+          (* kill (fn (pid, signal) =>
+                SysCall.simple
+                (fn () =>
+                  PrimitiveFFI.Windows.Process.terminate
+                  (PId.toRep pid, Signal.toRep signal)))
+                p *)
+      end
+      val kill = fn (p, signal) =>
+         (if useWindowsProcess then killForCreate else killForFork) (p, signal)
+
+      fun launchWithFork (path, args, env, stdin, stdout, stderr) =
+        case protect (Process.fork, ()) of
+          NONE => (* child *)
+              let
+                fun dup2 (old, new) =
+                    if old = new
+                      then ()
+                    else (IO.dup2 {old = old, new = new}; IO.close old)
+                val args = path :: args
+                val execTh =
+                    case env of
+                      NONE =>
+                          (fn () => Process.exec (path, args))
+                    | SOME env =>
+                          (fn () => Process.exece (path, args, env))
+              in
+                dup2 (stdin, FileSys.stdin)
+                ; dup2 (stdout, FileSys.stdout)
+                ; dup2 (stderr, FileSys.stderr)
+                ; ignore (execTh ())
+                ; Process.exit 0w127 (* just in case *)
+              end
+        | SOME pid => pid (* parent *)
+
+      (* TODO windows *)
+      val launch =
+         fn z => launchWithFork z
+         (* (if useWindowsProcess then launchWithCreate else launchWithFork) z *)
+
+      fun create {args, env, path, stderr, stdin, stdout} =
+         if not (FileSys.access (path, [FileSys.A_EXEC]))
+            then raise Fail (
+              "PosixError: "
+              ^ Posix.Error.errorName Posix.Error.noent
+              ^ " -- "
+              ^ Posix.Error.errorMsg Posix.Error.noent
+              ^ "\n"
+            )
+         else
+            let
+               val () = TextIO.flushOut TextIO.stdOut
+               val (fstdin, cstdin) = Param.openStdin stdin
+               val (fstdout, cstdout) = Param.openStdout stdout
+               val (fstderr, cstderr) = Param.openStderr stderr
+               val closeStdio =
+                  fn () => (Param.close stdin fstdin
+                            ; Param.close stdout fstdout
+                            ; Param.close stderr fstderr)
+               val pid =
+                  launch (path, args, env, fstdin, fstdout, fstderr)
+                  handle ex => (closeStdio ()
+                                ; Child.close (cstdin, cstdout, cstderr)
+                                ; raise ex)
+               val () = closeStdio ()
+            in
+               T {pid = pid,
+                  status = ref NONE,
+                  stderr = ref cstderr,
+                  stdin = ref cstdin,
+                  stdout = ref cstdout}
+            end
   end
 end

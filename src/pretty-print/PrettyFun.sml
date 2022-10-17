@@ -47,7 +47,7 @@ struct
         \\ separateWithSpaces
              [ SOME (token lparen ++ showFunArg funarg ++ token rparen)
              , Option.map
-                 (fn {colon, ...} => token colon)
+                 (fn {colon, sigexp} => token colon)
                  constraint
              ]
         \\ separateWithSpaces
